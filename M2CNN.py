@@ -7,9 +7,9 @@ from io import StringIO
 
 # ML
 import numpy as np
-from keras import layers, models, callbacks, metrics, regularizers
+from keras import layers, models, callbacks, regularizers, optimizers
 from sklearn.model_selection import train_test_split
-
+from sklearn.metrics import precision_score, recall_score, f1_score  # 导入sklearn的指标函数
 
 t1 = time.time()
 
@@ -80,14 +80,11 @@ def build_cnn_model_1(input_shape):
         ]
     )
 
-    # 编译模型
+    # 编译模型（仅保留accuracy作为内置指标）
     model_CNN.compile(
         optimizer="adam",
-        loss="sparse_categorical_crossentropy",  # 多分类问题整数标签
+        loss="sparse_categorical_crossentropy",
         metrics=["accuracy"]
-        # metrics.Precision(name='precision', average='macro'),  # 精确率
-        # metrics.Recall(name='recall', average='macro'),        # 召回率
-        # metrics.F1Score(name='f1', average='macro')]            # F1分数
     )
 
     return model_CNN
@@ -135,16 +132,57 @@ def build_cnn_model_2(input_shape):
         ]
     )
 
-    # 编译模型
+    # 编译模型（仅保留accuracy作为内置指标）
     model_CNN.compile(
         optimizer="adam",
-        loss="sparse_categorical_crossentropy",  # 多分类问题整数标签
+        loss="sparse_categorical_crossentropy",
         metrics=["accuracy"]
-        # metrics.Precision(name='precision', average='macro'),  # 精确率
-        # metrics.Recall(name='recall', average='macro'),        # 召回率
-        # metrics.F1Score(name='f1', average='macro')]            # F1分数
     )
 
+    return model_CNN
+
+
+def build_cnn_model_3(input_shape):
+    model_CNN = models.Sequential([
+        # 第一个卷积块（调整卷积核数量、BN位置）
+        layers.Conv2D(16, (3, 3), input_shape=input_shape),
+        layers.BatchNormalization(),
+        layers.Activation("relu"),
+        layers.MaxPooling2D((2, 2)),
+        layers.Dropout(0.3),
+
+        # 第二个卷积块
+        layers.Conv2D(32, (3, 3)),
+        layers.BatchNormalization(),
+        layers.Activation("relu"),
+        layers.MaxPooling2D((2, 2)),
+        layers.Dropout(0.3),
+
+        # 第三个卷积块（非对称卷积核 强化频域空间）
+        layers.Conv2D(64, (5, 3)),
+        layers.BatchNormalization(),
+        layers.Activation("relu"),
+        layers.MaxPooling2D((2, 2)),
+        layers.Dropout(0.3),
+
+        # 第四个卷积块（去掉池化）
+        layers.Conv2D(128, (3, 3)),
+        layers.BatchNormalization(),
+        layers.Activation("relu"),
+        layers.Dropout(0.3),
+
+        # 全连接层简化
+        layers.Flatten(),
+        layers.Dropout(0.5),
+        layers.Dense(4, activation="softmax"),
+    ])
+
+    # 优化器调整初始学习率
+    model_CNN.compile(
+        optimizer=optimizers.Adam(learning_rate=0.002),
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"]
+    )
     return model_CNN
 
 
@@ -161,6 +199,7 @@ def train_model():
 
     # 获取输入形状 (高度, 宽度, 通道数)
     input_shape = X_train[0].shape
+    print(input_shape)
 
     # 构建模型
     model_r = build_cnn_model_2(input_shape)
@@ -174,31 +213,37 @@ def train_model():
     history_r = model_r.fit(
         X_train,
         y_train,
-        epochs=300,  # 训练轮次
-        batch_size=32,  # 每一组的样本数
+        epochs=50,  # 训练轮次
+        batch_size=64,  # 每一组的样本数 32->64
         validation_split=0.2,
         callbacks=[
             callbacks.EarlyStopping(
-                patience=5, restore_best_weights=True
-            ),  # 5轮没有提升提前终止 返回最优解
+                patience=8, restore_best_weights=True
+            ),  # 5->8轮没有提升提前终止 返回最优解
             callbacks.ReduceLROnPlateau(
                 factor=0.5, patience=3
             ),  # 指标停滞时 学习率变为原来的一半 连续 3 轮没有提升就调整学习率
         ],
     )
 
-    # 评估模型，会返回损失和所有指定的指标
-    # test_loss, test_acc, test_precision, test_recall, test_f1 = model.evaluate(
-    #     X_test, y_test
-    # )
+    # 评估模型
     test_loss, test_acc = model_r.evaluate(X_test, y_test)
 
+    # 预测测试集结果（用于计算额外指标）
+    y_pred_probs = model_r.predict(X_test)
+    y_pred = np.argmax(y_pred_probs, axis=1)  # 将概率转换为类别标签
+
+    # 使用sklearn计算精确率、召回率和F1分数（多分类用macro平均）
+    test_precision = precision_score(y_test, y_pred, average='macro')
+    test_recall = recall_score(y_test, y_pred, average='macro')
+    test_f1 = f1_score(y_test, y_pred, average='macro')
+
     # 打印所有指标
-    # print(f"测试集损失: {test_loss:.4f}")
-    # print(f"测试集准确率: {test_acc:.4f}")
-    # print(f"测试集精确率: {test_precision:.4f}")
-    # print(f"测试集召回率: {test_recall:.4f}")
-    # print(f"测试集F1分数: {test_f1:.4f}")
+    print(f"测试集损失: {test_loss:.4f}")
+    print(f"测试集准确率: {test_acc:.4f}")
+    print(f"测试集精确率: {test_precision:.4f}")
+    print(f"测试集召回率: {test_recall:.4f}")
+    print(f"测试集F1分数: {test_f1:.4f}")
 
     # 保存模型
     model_r.save("vocal_tech_cnn.h5")
@@ -210,18 +255,18 @@ def train_model():
             "模型结构：\n"
             "{0}\n"
             "结果指标：\n"
-            "测试集损失: {1}\n"
-            "测试集准确率: {2}\n"
-            "测试集精确率: {3}\n"
-            "测试集召回率: {4}\n"
-            "测试集F1分数: {5}\n"
-            "训练时长： {6}\n".format(
+            "测试集损失: {1:.4f}\n"
+            "测试集准确率: {2:.4f}\n"
+            "测试集精确率: {3:.4f}\n"
+            "测试集召回率: {4:.4f}\n"
+            "测试集F1分数: {5:.4f}\n"
+            "训练时长： {6:.2f}秒\n".format(
                 summary_str.getvalue(),
                 test_loss,
                 test_acc,
-                None,
-                None,
-                None,
+                test_precision,
+                test_recall,
+                test_f1,
                 time.time() - t1
             )
         )

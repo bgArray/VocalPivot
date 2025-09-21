@@ -202,6 +202,7 @@ def M1_data_pre_operate(data_path: str, singer: str):
             datas.append([mel_gram, tag])
 
         np.save(DATASET_PATH + i, np.array(datas, dtype=object))
+        print("数据集生成成功：{0}".format(i))
 
 
 if __name__ == "__main__":
