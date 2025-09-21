@@ -1,0 +1,8 @@
+# training data
+./data/
+# Pycharm
+./.idea/
+# dataset
+./dataset/
+# report
+./reports/
