@@ -4,11 +4,11 @@ DATASET_PATH = "./dataset/"
 REPORTS_PATH = "./reports/"
 USE_PATH = "./data/"
 Languages = ["Chinese"]
-L_Singer = [r"Chinese\ZH-Alto-1",
-            r"Chinese\ZH-Tenor-1",
-            r"English\EN-Alto-1",
+L_Singer = [r"Chinese\ZH-Alto-1",  # 0
+            r"Chinese\ZH-Tenor-1",  # 1
+            r"English\EN-Alto-1",  # 2
             r"English\EN-Alto-2",
-            r"English\EN-Tenor-1",
+            r"English\EN-Tenor-1",  # 4
             r"French\FR-Soprano-1",
             r"French\FR-Tenor-1",
             r"German\DE-Soprano-1",

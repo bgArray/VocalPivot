@@ -169,6 +169,8 @@ def M1_data_pre_operate(data_path: str, singer: str):
             GTS_spliter(path2, USE_PATH)
         # break
     for i in os.listdir(USE_PATH):
+        if i + ".npy" in os.listdir(DATASET_PATH):
+            continue  # 避免重复操作
         folder_path = USE_PATH + "\\" + i
         datas = []
         for filename in os.listdir(folder_path):
@@ -206,5 +208,11 @@ def M1_data_pre_operate(data_path: str, singer: str):
 
 
 if __name__ == "__main__":
-    M1_data_pre_operate(DATA_PATH, L_Singer[0])
-    M1_data_pre_operate(DATA_PATH, L_Singer[1])
+    M1_data_pre_operate(DATA_PATH, L_Singer[4])
+    # M1_data_pre_operate(DATA_PATH, L_Singer[1])
+
+    # for i in os.listdir(USE_PATH):
+    #     # print(DATASET_PATH + i + ".npy")
+    #     if i + ".npy" in os.listdir(DATASET_PATH):
+    #         print(i)
+    # print(os.listdir(DATASET_PATH))
