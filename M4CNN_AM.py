@@ -9,19 +9,25 @@ from io import StringIO
 import numpy as np
 from keras import layers, models, callbacks, regularizers, optimizers
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import precision_score, recall_score, f1_score  # 导入sklearn的指标函数  可能每个版本不一样
-import tensorflow as tf
+from sklearn.metrics import (
+    precision_score,
+    recall_score,
+    f1_score,
+)  # 导入sklearn的指标函数  可能每个版本不一样
+from keras.saving import register_keras_serializable
+# import tensorflow as tf
 
 t1 = time.time()  # 总时间开始
 
 
 # 加载数据集
-def load_dataset_M1(data_dir: str = DATASET_PATH, count: int = -1) -> tuple:
+def load_dataset_M1(data_dir: str = DATASET_PATH, count: int = -1, is_skipping_speech: bool = True) -> tuple:
     """
     数据预处理
 
     这个函数是用来处理M1真假混声 再加上说话的数据集的
     后面要改的话不要动这个函数
+    :param is_skipping_speech: 不选取说话的数据
     :param count: 要加载多少个数据文件
     :param data_dir: .npy数据集文件的存放位置
     :return: 返回处理好的频谱和标签
@@ -35,13 +41,20 @@ def load_dataset_M1(data_dir: str = DATASET_PATH, count: int = -1) -> tuple:
         if counter == count:
             break
         if file.endswith(".npy"):
+            if "Paired_Speech_Group" in file and is_skipping_speech:
+                continue
             data = np.load(os.path.join(data_dir, file), allow_pickle=True)
             for item in data:
                 mel_gram, tag = item  # 数据结构[[梅尔频谱], (int)声音分类标签]
                 # 确保标签合法（过滤无效标签）
-                if tag in [-1, 0, 1, 2]:  # 这里是映射 -1说话 0真声 1混声 2假声
-                    X.append(mel_gram)
-                    y.append(tag)
+                if is_skipping_speech:
+                    if tag in [0, 1, 2]:  # 这里是映射 0真声 1混声 2假声
+                        X.append(mel_gram)
+                        y.append(tag)
+                else:
+                    if tag in [-1, 0, 1, 2]:  # 这里是映射 -1说话 0真声 1混声 2假声
+                        X.append(mel_gram)
+                        y.append(tag)
         counter += 1
 
     # 转换为numpy数组并标准化
@@ -52,64 +65,12 @@ def load_dataset_M1(data_dir: str = DATASET_PATH, count: int = -1) -> tuple:
     X = X[..., np.newaxis]
 
     # 标签映射为0开始的索引（-1 -> 3）
-    y = np.where(y == -1, 3, y)
+    if is_skipping_speech is False:
+        y = np.where(y == -1, 3, y)
     # import matplotlib.pyplot as plt
     # plt.imshow(X[0, :, :, 0], cmap='viridis')  # 显示第一个样本的梅尔频谱
     # plt.show()
     return X, y
-
-
-# def load_dataset_M1_normalization(
-#     data_dir: str = DATASET_PATH, count: int = -1
-# ) -> tuple:
-#     """
-#
-#     :param data_dir:
-#     :param count:
-#     :return:
-#     """
-#     # X = []
-#     y = []
-#     counter = 0
-#
-#     # 第一遍遍历：收集所有数据计算全局统计量
-#     all_data = []
-#     for file in os.listdir(data_dir):
-#         if counter == count:
-#             break
-#         if file.endswith(".npy"):
-#             data = np.load(os.path.join(data_dir, file), allow_pickle=True)
-#             for item in data:
-#                 mel_gram, tag = item
-#                 if tag in [-1, 0, 1, 2]:
-#                     all_data.append(mel_gram)
-#                     y.append(tag)
-#         counter += 1
-#
-#     # 计算全局均值和标准差
-#     all_data_np = np.array(all_data)
-#     # global_mean = np.mean(all_data_np)
-#     # global_std = np.std(all_data_np)
-#     epsilon = 1e-8  # 防止除零
-#     # 在 load_dataset_M1_normalization 中替换归一化方式
-#     global_min = np.min(all_data_np)
-#     global_max = np.max(all_data_np)
-#     X = [(mel - global_min) / (global_max - global_min + epsilon) for mel in all_data]
-#
-#     # 归一化处理
-#     # X = [(mel - global_mean) / (global_std + epsilon) for mel in all_data]
-#     X = np.array(X)
-#     y = np.array(y)
-#
-#     # 添加通道维度并处理标签
-#     X = X[..., np.newaxis]
-#     y = np.where(y == -1, 3, y)
-#
-#     # print(f"数据归一化完成 - 均值: {global_mean:.4f}, 标准差: {global_std:.4f}")
-#     import matplotlib.pyplot as plt
-#     plt.imshow(X[0, :, :, 0], cmap='viridis')  # 显示第一个样本的梅尔频谱
-#     plt.show()
-#     return X, y
 
 
 # 构建CNN模型
@@ -147,9 +108,7 @@ def build_cnn_model_1(input_shape):
 
     # 编译模型（仅保留accuracy作为内置指标）
     model_CNN.compile(
-        optimizer="adam",
-        loss="sparse_categorical_crossentropy",
-        metrics=["accuracy"]
+        optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"]
     )
 
     return model_CNN
@@ -189,7 +148,9 @@ def build_cnn_model_2(input_shape):
             layers.BatchNormalization(),
             layers.Dropout(0.2),
             # 过渡层
-            layers.Conv2D(32, (3, 3), activation='relu', kernel_regularizer=regularizers.l2(0.001)),
+            layers.Conv2D(
+                32, (3, 3), activation="relu", kernel_regularizer=regularizers.l2(0.001)
+            ),
             # 全连接层
             layers.Flatten(),  # 二维特征图展平
             layers.Dense(128, activation="relu"),  # 全连接
@@ -200,9 +161,7 @@ def build_cnn_model_2(input_shape):
 
     # 编译模型（仅保留accuracy作为内置指标）
     model_CNN.compile(
-        optimizer="adam",
-        loss="sparse_categorical_crossentropy",
-        metrics=["accuracy"]
+        optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"]
     )
 
     return model_CNN
@@ -210,45 +169,43 @@ def build_cnn_model_2(input_shape):
 
 def build_cnn_model_3(input_shape):
     print("调用模型3")
-    model_CNN = models.Sequential([
-        # 第一个卷积块（调整卷积核数量、BN位置）
-        layers.Conv2D(16, (3, 3), input_shape=input_shape),
-        layers.BatchNormalization(),
-        layers.Activation("relu"),
-        layers.MaxPooling2D((2, 2)),
-        layers.Dropout(0.2),
-
-        # 第二个卷积块
-        layers.Conv2D(32, (3, 3)),
-        layers.BatchNormalization(),
-        layers.Activation("relu"),
-        layers.MaxPooling2D((2, 2)),
-        layers.Dropout(0.2),
-
-        # 第三个卷积块（非对称卷积核 强化频域空间）
-        layers.Conv2D(64, (5, 3)),
-        layers.BatchNormalization(),
-        layers.Activation("relu"),
-        layers.MaxPooling2D((2, 2)),
-        layers.Dropout(0.2),
-
-        # 第四个卷积块（去掉池化）
-        layers.Conv2D(128, (3, 3)),
-        layers.BatchNormalization(),
-        layers.Activation("relu"),
-        layers.Dropout(0.2),
-
-        # 全连接层简化
-        layers.Flatten(),
-        layers.Dropout(0.5),
-        layers.Dense(4, activation="softmax"),
-    ])
+    model_CNN = models.Sequential(
+        [
+            # 第一个卷积块（调整卷积核数量、BN位置）
+            layers.Conv2D(16, (3, 3), input_shape=input_shape),
+            layers.BatchNormalization(),
+            layers.Activation("relu"),
+            layers.MaxPooling2D((2, 2)),
+            layers.Dropout(0.2),
+            # 第二个卷积块
+            layers.Conv2D(32, (3, 3)),
+            layers.BatchNormalization(),
+            layers.Activation("relu"),
+            layers.MaxPooling2D((2, 2)),
+            layers.Dropout(0.2),
+            # 第三个卷积块（非对称卷积核 强化频域空间）
+            layers.Conv2D(64, (5, 3)),
+            layers.BatchNormalization(),
+            layers.Activation("relu"),
+            layers.MaxPooling2D((2, 2)),
+            layers.Dropout(0.2),
+            # 第四个卷积块（去掉池化）
+            layers.Conv2D(128, (3, 3)),
+            layers.BatchNormalization(),
+            layers.Activation("relu"),
+            layers.Dropout(0.2),
+            # 全连接层简化
+            layers.Flatten(),
+            layers.Dropout(0.5),
+            layers.Dense(4, activation="softmax"),
+        ]
+    )
 
     # 优化器调整初始学习率
     model_CNN.compile(
         optimizer=optimizers.Adam(),  # 学快一点  learning_rate=0.001 如果要调快最好batch size等比例
         loss="sparse_categorical_crossentropy",
-        metrics=["accuracy"]
+        metrics=["accuracy"],
     )
     return model_CNN
 
@@ -292,7 +249,9 @@ def build_cnn_model_4(input_shape):
             # layers.Conv2D(32, (3, 3), activation='relu', kernel_regularizer=regularizers.l2(0.001)),
             # 全连接层
             # layers.Flatten(),  # 二维特征图展平
-            layers.Dense(64, activation="relu", kernel_regularizer=regularizers.l2(0.001)),  # 减少神经元数+L2正则
+            layers.Dense(
+                64, activation="relu", kernel_regularizer=regularizers.l2(0.001)
+            ),  # 减少神经元数+L2正则
             layers.Dropout(0.6),  # 全连接层Dropout从0.5提至0.6
             layers.Dense(4, activation="softmax"),
         ]
@@ -300,12 +259,17 @@ def build_cnn_model_4(input_shape):
 
     # 编译模型（仅保留accuracy作为内置指标）
     model_CNN.compile(
-        optimizer="adam",
-        loss="sparse_categorical_crossentropy",
-        metrics=["accuracy"]
+        optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"]
     )
 
     return model_CNN
+
+
+# 修改为具名函数（可序列化）
+@register_keras_serializable(name="reduce_mean_layer")
+def reduce_mean_layer(x_):
+    import tensorflow as tf  # 内部显式导入tf
+    return tf.reduce_mean(x_, axis=-1, keepdims=True)
 
 
 def build_cnn_model_5(input_shape):
@@ -313,7 +277,7 @@ def build_cnn_model_5(input_shape):
     基于模型2添加空间注意力机制的CNN模型
     保留模型2的4组卷积块结构，在特征提取后加入注意力机制
     """
-    print("调用模型5（带注意力机制）")
+    print("调用模型5（注意力机制优化）")
 
     # 输入层
     inputs = layers.Input(shape=input_shape)
@@ -322,25 +286,25 @@ def build_cnn_model_5(input_shape):
     x = layers.Conv2D(32, (3, 3), activation="relu")(inputs)
     x = layers.MaxPooling2D((2, 2))(x)
     x = layers.BatchNormalization()(x)
-    x = layers.Dropout(0.3)(x)
+    x = layers.Dropout(0.1)(x)
 
     # 第二个卷积块
     x = layers.Conv2D(64, (3, 3), activation="relu")(x)
     x = layers.MaxPooling2D((2, 2))(x)
     x = layers.BatchNormalization()(x)
-    x = layers.Dropout(0.3)(x)
+    x = layers.Dropout(0.15)(x)
 
     # 第三个卷积块
     x = layers.Conv2D(128, (3, 3), activation="relu")(x)
     x = layers.MaxPooling2D((2, 2))(x)
     x = layers.BatchNormalization()(x)
-    x = layers.Dropout(0.3)(x)
+    x = layers.Dropout(0.15)(x)
 
     # 第四个卷积块
     x = layers.Conv2D(256, (3, 3), activation="relu")(x)
     x = layers.MaxPooling2D((2, 2))(x)
     x = layers.BatchNormalization()(x)
-    x = layers.Dropout(0.3)(x)
+    x = layers.Dropout(0.2)(x)
 
     # 空间注意力机制（新增部分）
     # 1. 计算通道注意力
@@ -352,19 +316,111 @@ def build_cnn_model_5(input_shape):
     channel_att = layers.Reshape((1, 1, x.shape[-1]))(channel_att)  # 调整形状用于广播
     x = layers.Multiply()([x, channel_att])  # 应用通道注意力
 
+    # x = Lambda(reduce_mean_layer)(x)
+
     # 2. 计算空间注意力
-    spatial_avg = layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1, keepdims=True))(x)  # 空间平均池化
-    spatial_max = layers.Lambda(lambda x: tf.reduce_max(x, axis=-1, keepdims=True))(x)  # 空间最大池化
+    spatial_avg = layers.Lambda(reduce_mean_layer,
+                                output_shape=lambda input_shape_: (input_shape_[0], input_shape_[1], input_shape_[2], 1)
+                                )(
+        x
+    )  # 空间平均池化
+    spatial_max = layers.Lambda(reduce_mean_layer,
+                                output_shape=lambda input_shape_: (input_shape_[0], input_shape_[1], input_shape_[2], 1)
+                                )(
+        x
+    )  # 空间最大池化
     spatial_att = layers.Concatenate(axis=-1)([spatial_avg, spatial_max])
-    spatial_att = layers.Conv2D(1, (7, 7), padding="same", activation="sigmoid")(spatial_att)  # 7x7卷积学习空间权重
+    spatial_att = layers.Conv2D(1, (7, 7), padding="same", activation="sigmoid")(
+        spatial_att
+    )  # 7x7卷积学习空间权重
     x = layers.Multiply()([x, spatial_att])  # 应用空间注意力
 
     # 过渡层（保留模型2的过渡层思路）
-    x = layers.Conv2D(32, (3, 3), activation='relu', kernel_regularizer=regularizers.l2(0.001))(x)
+    x = layers.Conv2D(
+        32, (3, 3), activation="relu", kernel_regularizer=regularizers.l2(0.001)
+    )(x)
 
     # 全连接层
     x = layers.Flatten()(x)
     x = layers.Dense(128, activation="relu")(x)
+    x = layers.Dropout(0.5)(x)
+    # 只分3类
+    outputs = layers.Dense(3, activation="softmax")(x)
+
+    # 构建模型
+    model_CNN = models.Model(inputs=inputs, outputs=outputs)
+
+    # 编译模型
+    model_CNN.compile(
+        optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"]
+    )
+
+    return model_CNN
+
+
+# M6 注意力优化
+def spatial_attention_block(input_feature):
+    # 空间池化：用1x1卷积替代Lambda层，避免TensorFlow版本兼容警告
+    avg_pool = layers.Conv2D(1, (1, 1), padding="same", activation=None)(input_feature)
+    max_pool = layers.Conv2D(1, (1, 1), padding="same", activation=None)(input_feature)
+    # 拼接后用3x3卷积（原7x7过大，易导致参数冗余）学习空间权重
+    concat = layers.Concatenate(axis=-1)([avg_pool, max_pool])
+    spatial_att = layers.Conv2D(1, (3, 3), padding="same", activation="sigmoid")(concat)
+    return layers.Multiply()([input_feature, spatial_att])
+
+
+def build_cnn_model_6(input_shape):
+    """
+    基于模型2添加空间注意力机制的CNN模型  优化：只关注空间注意力
+    将注意力模块提前，提前到第二个卷积层结束，以获取耕读特征
+    保留模型2的4组卷积块结构，在特征提取后加入注意力机制  卷积层drop 0.2->0.3
+    """
+    print("调用模型6（带注意力机制--修改）")
+
+    # 输入层
+    inputs = layers.Input(shape=input_shape)
+
+    # 第一个卷积块（模型2基础结构）
+    x = layers.Conv2D(32, (3, 3), activation="relu")(inputs)
+    x = layers.MaxPooling2D((2, 2))(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Dropout(0.2)(x)
+
+    # 第二个卷积块
+    x = layers.Conv2D(64, (3, 3), activation="relu")(x)
+    x = layers.MaxPooling2D((2, 2))(x)
+    x = layers.BatchNormalization()(x)
+
+    # 空间注意力机制
+    # 提前！ 这样不至于放到最后提不出来什么特征
+    x = spatial_attention_block(x)  # 替代原通道空间双注意力
+
+    x = layers.Dropout(0.2)(x)
+
+    # 第三个卷积块
+    x = layers.Conv2D(128, (3, 3), activation="relu")(x)
+    x = layers.MaxPooling2D((2, 2))(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Dropout(0.3)(x)
+
+    # 第四个卷积块
+    # x = layers.Conv2D(256, (3, 3), activation="relu")(x)
+    # x = layers.MaxPooling2D((2, 2))(x)
+    # x = layers.BatchNormalization()(x)
+    # x = layers.Dropout(0.3)(x)
+
+    # 过渡层（保留模型2的过渡层思路）
+    x = layers.Conv2D(
+        32, (3, 3), activation="relu", kernel_regularizer=regularizers.l2(0.001)
+    )(x)
+
+    # 全连接层
+    x = layers.Flatten()(x)
+    x = layers.Dense(128, activation="relu")(
+        x
+    )  # 如果还是过拟合，可将128个神经元进一步降低到64并配合正则
+    # x = layers.Dense(64, activation="relu", kernel_regularizer=regularizers.l2(0.001))(x)
+    # x = layers.Dropout(0.6)(x)  # 提高Dropout比例（0.5→0.6），增强泛化
     x = layers.Dropout(0.5)(x)
     outputs = layers.Dense(4, activation="softmax")(x)
 
@@ -373,23 +429,30 @@ def build_cnn_model_5(input_shape):
 
     # 编译模型
     model_CNN.compile(
-        optimizer="adam",
-        loss="sparse_categorical_crossentropy",
-        metrics=["accuracy"]
+        optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"]
     )
 
     return model_CNN
 
 
-model_list = [build_cnn_model_1, build_cnn_model_2, build_cnn_model_3, build_cnn_model_4, build_cnn_model_5]
+model_list = [
+    build_cnn_model_1,
+    build_cnn_model_2,
+    build_cnn_model_3,
+    build_cnn_model_4,
+    build_cnn_model_5,
+    build_cnn_model_6,
+]
 
 
 # 训练模型
-def train_model(model_in: int,
-                learning_diminish: float,
-                learning_patience: int = 3,
-                epo: int = 50,
-                b_size: int = 32):
+def train_model(
+    model_in: int,
+    learning_diminish: float,
+    learning_patience: int = 3,
+    epo: int = 50,
+    b_size: int = 32,
+):
     # 加载数据
     X, y = load_dataset_M1()
     print(f"数据集规模: {X.shape}, 标签数量: {y.shape}")
@@ -439,9 +502,9 @@ def train_model(model_in: int,
     # 使用sklearn计算精确率、召回率和F1分数（多分类用macro平均）
     # 原来那么写不行
     # 其他人复现如果这里有问题可以关注一下sklearn的版本之类的（12行）
-    test_precision = precision_score(y_test, y_pred, average='macro')
-    test_recall = recall_score(y_test, y_pred, average='macro')
-    test_f1 = f1_score(y_test, y_pred, average='macro')
+    test_precision = precision_score(y_test, y_pred, average="macro")
+    test_recall = recall_score(y_test, y_pred, average="macro")
+    test_f1 = f1_score(y_test, y_pred, average="macro")
 
     # 打印所有指标
     print(f"测试集损失: {test_loss:.4f}")
@@ -457,7 +520,9 @@ def train_model(model_in: int,
     actual_epochs = len(history_r.epoch)
 
     # 实验结果简报
-    with open(REPORTS_PATH + "训练数据（{0}）.txt".format(time.time()), "w", encoding="utf-8") as f:
+    with open(
+        REPORTS_PATH + "训练数据（{0}）.txt".format(time.time()), "w", encoding="utf-8"
+    ) as f:
         f.write(
             "模型结构：\n"
             "{0}\n"
@@ -470,7 +535,7 @@ def train_model(model_in: int,
             "测试集精确率: {6:.4f}\n"
             "测试集召回率: {7:.4f}\n"
             "测试集F1分数: {8:.4f}\n"
-            "实际训练轮次: {9} 轮\n"  
+            "实际训练轮次: {9} 轮\n"
             "训练时长： {10:.2f}秒\n".format(
                 summary_str.getvalue(),
                 model_in + 1,
@@ -482,7 +547,7 @@ def train_model(model_in: int,
                 test_recall,
                 test_f1,
                 actual_epochs,
-                time.time() - t1
+                time.time() - t1,
             )
         )
 

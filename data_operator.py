@@ -207,8 +207,111 @@ def M1_data_pre_operate(data_path: str, singer: str):
         print("数据集生成成功：{0}".format(i))
 
 
+def select_M2_data_pre_operate(path_list: list):  # 指定文件夹列表避免数据太差 会处理气声
+    for i in path_list:  # path_list 里的路径应该为次级数据库路径，下函各类特征及对照组
+        for j in os.listdir(i):
+            path2 = i + "\\" + j
+            print(path2)
+            GTS_spliter(path2, USE_PATH)
+    # target_path = data_path + "\\" + singer + r"\Mixed_Voice_and_Falsetto"
+    # folder = [
+    #     "Control_Group",
+    #     "Falsetto_Group",
+    #     "Mixed_Voice_Group",
+    #     "Paired_Speech_Group",
+    # ]
+    # for i in os.listdir(target_path):
+    #     # 这是歌名
+    #     path1 = target_path + "\\" + i
+    #     for j in folder:
+    #         path2 = path1 + "\\" + j
+    #         print(path2)
+    #         GTS_spliter(path2, USE_PATH)
+    #     # break
+    for i in os.listdir(USE_PATH):
+        if i + ".npy" in os.listdir(DATASET_PATH):
+            continue  # 避免重复操作
+        folder_path = USE_PATH + "\\" + i
+        datas = []
+        for filename in os.listdir(folder_path):
+            file_path = os.path.join(folder_path, filename)
+            # 处理音频为1秒长度
+            y, sr = process_audio_to_1s(file_path)
+            # 生成梅尔频谱
+            mel_gram = generate_mel_spectrogram(y, sr, file_path)
+            # print(mel_gram)
+
+            # 标签处理
+            # print(filename)
+            position = str(filename).rfind("_")  # 找前缀
+            tech_tag = str(filename)[position + 1:].replace(".wav", "")
+            print(tech_tag)
+            tech_list: List
+            if tech_tag.find(","):
+                tech_list = tech_tag.split(",")
+            else:
+                tech_list.append(tech_tag)
+            # print(tech_list)
+            if "0" in tech_list:
+                tag = 0
+            elif "1" in tech_list:
+                tag = 1
+            elif "2" in tech_list:
+                tag = 2
+            elif "3" in tech_list:
+                tag = 3  # 气声
+
+            elif "None" in tech_list:
+                tag = -1  # 说话
+            else:
+                tag = 0  # 没说就是真声
+            print(tag)
+
+            datas.append([mel_gram, tag])
+
+        np.save(DATASET_PATH + i, np.array(datas, dtype=object))
+        print("数据集生成成功：{0}".format(i))
+
+
 if __name__ == "__main__":
-    M1_data_pre_operate(DATA_PATH, L_Singer[4])
+    select_M2_data_pre_operate([r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\French\FR-Soprano-1\Mixed_Voice_and_Falsetto\cap diamant",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\French\FR-Soprano-1\Mixed_Voice_and_Falsetto\celle de mes vingt ans",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\French\FR-Soprano-1\Mixed_Voice_and_Falsetto\chez moi",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\French\FR-Soprano-1\Mixed_Voice_and_Falsetto\comment deja",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\French\FR-Soprano-1\Mixed_Voice_and_Falsetto\eviter les roses",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\French\FR-Soprano-1\Mixed_Voice_and_Falsetto\je m'appelle helene",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\French\FR-Tenor-1\Mixed_Voice_and_Falsetto\a leve toi",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\French\FR-Tenor-1\Mixed_Voice_and_Falsetto\la fleur",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\French\FR-Tenor-1\Mixed_Voice_and_Falsetto\Le Toréador",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\French\FR-Tenor-1\Mixed_Voice_and_Falsetto\manon",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\French\FR-Tenor-1\Mixed_Voice_and_Falsetto\pourquoi",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\German\DE-Soprano-1\Mixed_Voice_and_Falsetto\Adio Adio",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\German\DE-Soprano-1\Mixed_Voice_and_Falsetto\Copilot",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\German\DE-Soprano-1\Mixed_Voice_and_Falsetto\Danke",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\German\DE-Soprano-1\Mixed_Voice_and_Falsetto\Mitten Im Paradies",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\German\DE-Soprano-1\Mixed_Voice_and_Falsetto\Ich Gehör Nur Mir",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\German\DE-Soprano-1\Mixed_Voice_and_Falsetto\Die Gedanken Sind Frei",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\German\DE-Tenor-1\Mixed_Voice_and_Falsetto\Halt",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\German\DE-Tenor-1\Mixed_Voice_and_Falsetto\Ich liebe dich",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\German\DE-Tenor-1\Mixed_Voice_and_Falsetto\Im Frühling",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\German\DE-Tenor-1\Mixed_Voice_and_Falsetto\Im wunderschönen Monat Mai",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\German\DE-Tenor-1\Mixed_Voice_and_Falsetto\In der Fremde",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\Italian\IT-Bass-2\Mixed_Voice_and_Falsetto\Nina",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\Italian\IT-Bass-2\Mixed_Voice_and_Falsetto\O cessate di piagarmi",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\Italian\IT-Bass-1\Mixed_Voice_and_Falsetto\Tristezza",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\Italian\IT-Soprano-1\Mixed_Voice_and_Falsetto\batti batti",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\Italian\IT-Soprano-1\Mixed_Voice_and_Falsetto\bella ciao",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\Italian\IT-Soprano-1\Mixed_Voice_and_Falsetto\caro mio ben",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\Japanese\JA-Soprano-1\Mixed_Voice_and_Falsetto\あの頃～ジンジンバオヂュオニー～",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\Japanese\JA-Soprano-1\Mixed_Voice_and_Falsetto\いつも何度でも",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\Japanese\JA-Soprano-1\Mixed_Voice_and_Falsetto\さよならの夏～コクリコ坂から",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\Japanese\JA-Tenor-1\Mixed_Voice_and_Falsetto\君をのせて",
+                                r"E:\文档_学习_高中\活动杂项\AiVocal\dataset\Japanese\JA-Tenor-1\Mixed_Voice_and_Falsetto\ドラえもんのうた"])
+
+
+
+
+    # M1_data_pre_operate(DATA_PATH, L_Singer[4])
     # M1_data_pre_operate(DATA_PATH, L_Singer[1])
 
     # for i in os.listdir(USE_PATH):
