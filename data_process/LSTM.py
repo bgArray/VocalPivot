@@ -129,8 +129,20 @@ def GTS_LSTM_operator(target_path: str, is_show: bool = False):
                     tag_list = []
                     return_list.append(sentence)
                     sentence_start = end_tick + 1
+    # # 检查并统一列表中元素的形状
+    # for i in range(len(return_list)):
+    #     arr = return_list[i]
+    #     if len(arr.shape) == 1:
+    #         # 将一维数组转为二维 (622, 1)
+    #         return_list[i] = arr.reshape(-1, 1)
+    #
+    # # # 此时所有元素都是二维，可正常转换
+    # # np.array(return_list, dtype=object)
 
-    np.save("{0}{1}_{2}_{3}.npy".format(DATASET_PATH,
-                                      singer_name,
-                                      song_name,
-                                      type_name), np.array(return_list, dtype=object))
+    try:
+        np.save("{0}{1}_{2}_{3}.npy".format(DATASET_PATH,
+                                          singer_name,
+                                          song_name,
+                                          type_name), np.array(return_list, dtype=object))
+    except ValueError:
+        print(return_list)

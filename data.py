@@ -5,7 +5,7 @@ from Constant import *
 
 
 if __name__ == '__main__':
-    spath = os.path.join(DATA_PATH, L_Singer[0], "Mixed_Voice_and_Falsetto")
+    spath = os.path.join(DATA_PATH, L_Singer[1], "Mixed_Voice_and_Falsetto")
     techs = ["Control_Group",
         "Falsetto_Group",
         "Mixed_Voice_Group",]
