@@ -12,21 +12,42 @@ import copy
 
 
 # -------------------------- 1. 多标签数据加载函数 --------------------------
-def load_multilabel_data(file_path):
+def load_multilabel_data(file_path, max_samples=None):
     """
     加载.npy数据，支持多标签格式
     每个时间步可以有多个标签（如同时有真声和颤音）
+    
+    参数：
+        file_path: 数据文件路径或目录
+        max_samples: 最大加载样本数，None表示加载全部
     """
     data = []
-    for filename in os.listdir(file_path):
-        if filename.endswith(".npy"):
-            file_full_path = os.path.join(file_path, filename)
-            try:
-                loaded_data = np.load(file_full_path, allow_pickle=True)
-                data.extend(loaded_data)
-            except Exception as e:
-                print(f"警告：加载文件 {filename} 时出错: {e}")
-                continue
+    
+    # 如果file_path是文件，直接加载
+    if os.path.isfile(file_path) and file_path.endswith(".npy"):
+        try:
+            loaded_data = np.load(file_path, allow_pickle=True)
+            data.extend(loaded_data)
+        except Exception as e:
+            print(f"警告：加载文件 {file_path} 时出错: {e}")
+            return [], []
+    else:
+        # 如果是目录，加载所有npy文件
+        for filename in os.listdir(file_path):
+            if filename.endswith(".npy") and filename.startswith("multilabel_"):
+                file_full_path = os.path.join(file_path, filename)
+                try:
+                    loaded_data = np.load(file_full_path, allow_pickle=True)
+                    data.extend(loaded_data)
+                    print(f"加载文件: {filename}, 样本数: {len(loaded_data)}")
+                except Exception as e:
+                    print(f"警告：加载文件 {filename} 时出错: {e}")
+                    continue
+    
+    # 限制样本数量
+    if max_samples is not None and len(data) > max_samples:
+        print(f"限制样本数从 {len(data)} 到 {max_samples}")
+        data = data[:max_samples]
 
     X = []  # 存储mel特征序列
     y = []  # 存储多标签序列（每个元素是一个标签列表，可能包含多个标签）
@@ -219,33 +240,65 @@ def preprocess_multilabel_data(X, y, label_to_idx=None, max_length=None, is_trai
     else:
         num_labels = len(label_to_idx)
 
-    # 3.4 序列统一长度
+    # 3.4 序列统一长度（限制最大长度以避免内存溢出）
     if is_train:
         max_length = max(len(seq) for seq in X)
+        # 限制最大长度为512，避免内存溢出
+        max_length = min(max_length, 512)
+        print(f"序列最大长度: {max_length}")
 
-    # 特征序列填充
-    X_padded = []
-    for seq in X:
-        if len(seq) < max_length:
-            pad_width = max_length - len(seq)
-            padded = np.pad(
-                seq, ((0, pad_width), (0, 0)), mode="constant", constant_values=0.0
-            )
-        else:
-            padded = seq[:max_length]
-        X_padded.append(padded.astype("float32"))
-    X_padded = np.array(X_padded)
-
-    # 多标签编码（multi-hot encoding）
-    y_multihot = np.zeros((len(y), max_length, num_labels), dtype="float32")
-    for i, tag_seq in enumerate(y):
-        for j, tag_list in enumerate(tag_seq):
-            if j >= max_length:
-                break
-            # 为每个标签设置1
-            for tag in tag_list:
-                if tag in label_to_idx:
-                    y_multihot[i, j, label_to_idx[tag]] = 1.0
+    # 特征序列填充（分批处理以避免内存溢出）
+    # 使用更小的批次大小，避免内存溢出
+    batch_size = 500  # 每批处理500个样本
+    
+    # 预先分配数组（使用更小的数据类型或分批保存）
+    X_padded_list = []
+    y_multihot_list = []
+    
+    for batch_start in range(0, len(X), batch_size):
+        batch_end = min(batch_start + batch_size, len(X))
+        batch_X = X[batch_start:batch_end]
+        batch_y = y[batch_start:batch_end]
+        
+        # 处理特征
+        batch_padded = []
+        for seq in batch_X:
+            if len(seq) < max_length:
+                pad_width = max_length - len(seq)
+                padded = np.pad(
+                    seq, ((0, pad_width), (0, 0)), mode="constant", constant_values=0.0
+                )
+            else:
+                padded = seq[:max_length]
+            batch_padded.append(padded.astype("float32"))
+        
+        # 处理标签
+        batch_multihot = np.zeros((len(batch_y), max_length, num_labels), dtype="float32")
+        for i, tag_seq in enumerate(batch_y):
+            for j, tag_list in enumerate(tag_seq):
+                if j >= max_length:
+                    break
+                # 为每个标签设置1
+                for tag in tag_list:
+                    if tag in label_to_idx:
+                        batch_multihot[i, j, label_to_idx[tag]] = 1.0
+        
+        # 保存批次数据
+        X_padded_list.append(np.array(batch_padded))
+        y_multihot_list.append(batch_multihot)
+        
+        if is_train:
+            print(f"  处理进度: {batch_end}/{len(X)}")
+    
+    # 合并所有批次（如果数据量不大，可以合并；否则可以分批保存）
+    if len(X_padded_list) == 1:
+        X_padded = X_padded_list[0]
+        y_multihot = y_multihot_list[0]
+    else:
+        # 分批合并，避免一次性创建大数组
+        print("  合并批次数据...")
+        X_padded = np.concatenate(X_padded_list, axis=0)
+        y_multihot = np.concatenate(y_multihot_list, axis=0)
 
     return X_padded, y_multihot, max_length, label_to_idx
 
@@ -509,9 +562,11 @@ def main(data_path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"使用设备: {device}")
 
-    # 8.1 加载原始数据
+    # 8.1 加载原始数据（限制样本数量以节省内存）
     print("开始加载数据...")
-    X_raw, y_raw = load_multilabel_data(data_path)
+    # 限制样本数量，先跑通流程（可以根据内存情况调整）
+    MAX_SAMPLES = 2000  # 只使用前5000个样本，可以根据需要调整
+    X_raw, y_raw = load_multilabel_data(data_path, max_samples=MAX_SAMPLES)
     print(f"数据加载完成，原始样本数: {len(X_raw)}")
 
     # 打印一些标签统计信息
