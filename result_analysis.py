@@ -4,7 +4,7 @@ from sklearn.metrics import confusion_matrix, accuracy_score  # 导入混淆矩�
 # import seaborn as sns
 from keras.models import load_model
 from sklearn.model_selection import train_test_split
-from M2CNN import load_dataset_M1  # 导入你的数据加载函数
+from M1.M2CNN import load_dataset_M1  # 导入你的数据加载函数
 
 # ---------------------- 1. 加载模型和测试数据 ----------------------
 # 加载训练好的h5模型（替换为你的模型实际路径）

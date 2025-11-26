@@ -1,5 +1,6 @@
 # 数据集路径
 DATA_PATH = r"E:\文档_学习_高中\活动杂项\AiVocal\dataset"
+# DATA_PATH = "./"
 DATASET_PATH = "./dataset/"
 REPORTS_PATH = "./reports/"
 USE_PATH = "./data/"
